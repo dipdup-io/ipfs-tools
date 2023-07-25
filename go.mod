@@ -3,9 +3,9 @@ module github.com/dipdup-io/ipfs-tools
 go 1.20
 
 require (
-	github.com/ipfs/boxo v0.10.1
+	github.com/ipfs/boxo v0.10.2-0.20230629143123-2d3edc552442
 	github.com/ipfs/go-cid v0.4.1
-	github.com/ipfs/kubo v0.21.0-rc3
+	github.com/ipfs/kubo v0.21.0
 	github.com/libp2p/go-libp2p v0.29.0
 	github.com/multiformats/go-multiaddr v0.10.1
 	github.com/pkg/errors v0.9.1
