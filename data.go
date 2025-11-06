@@ -9,8 +9,8 @@ type Data struct {
 
 // Provider -
 type Provider struct {
-	ID      string `yaml:"id" validate:"required"`
-	Address string `yaml:"addr" validate:"required"`
+	ID      string `validate:"required" yaml:"id"`
+	Address string `validate:"required" yaml:"addr"`
 }
 
 // prefix

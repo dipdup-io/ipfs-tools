@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	icore "github.com/ipfs/boxo/coreiface"
-	icorepath "github.com/ipfs/boxo/coreiface/path"
 	"github.com/ipfs/boxo/files"
+	boxopath "github.com/ipfs/boxo/path"
+	icore "github.com/ipfs/kubo/core/coreiface"
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
@@ -78,9 +78,9 @@ func (n *Node) Close() error {
 
 // Get -
 func (n *Node) Get(ctx context.Context, cid string) (Data, error) {
-	cidObj := icorepath.New(cid)
-	if err := cidObj.IsValid(); err != nil {
-		return Data{}, errors.Wrapf(ErrInvalidCID, cid)
+	cidObj, err := boxopath.NewPath(cid)
+	if err != nil {
+		return Data{}, errors.Wrap(ErrInvalidCID, cid)
 	}
 
 	start := time.Now()
@@ -167,7 +167,7 @@ func createRepository(dir string, blacklist []string, providers []Provider) (str
 	cfg.Swarm.ConnMgr.HighWater = config.NewOptionalInteger(900)
 	cfg.Swarm.ConnMgr.LowWater = config.NewOptionalInteger(600)
 	cfg.Swarm.ConnMgr.GracePeriod = config.NewOptionalDuration(time.Minute * 5)
-	cfg.Routing.AcceleratedDHTClient = true
+	cfg.Routing.AcceleratedDHTClient = config.True
 	cfg.Routing.Type = config.NewOptionalString("auto")
 
 	peers, err := providersToAddrInfo(providers)

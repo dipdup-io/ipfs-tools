@@ -2,8 +2,9 @@ package ipfs
 
 import (
 	"context"
+	"crypto/rand"
 	"io"
-	"math/rand"
+	"math/big"
 	"net/http"
 	"net/url"
 	"time"
@@ -57,17 +58,20 @@ func (pool *Pool) Get(ctx context.Context, link string) (Data, error) {
 
 // GetFromRandomGateway - returns result if random node returns it
 func (pool *Pool) GetFromRandomGateway(ctx context.Context, link string) (Data, error) {
-	index := rand.Intn(len(pool.gateways))
+	index, err := rand.Int(rand.Reader, big.NewInt(int64(len(pool.gateways))))
+	if err != nil {
+		return Data{}, err
+	}
 	start := time.Now()
-	data, err := pool.request(ctx, link, pool.gateways[index])
+	data, err := pool.request(ctx, link, pool.gateways[index.Int64()])
 	if err != nil {
 		return Data{
-			Node: pool.gateways[index],
+			Node: pool.gateways[index.Int64()],
 		}, err
 	}
 	return Data{
 		Raw:          data,
-		Node:         pool.gateways[index],
+		Node:         pool.gateways[index.Int64()],
 		ResponseTime: time.Since(start).Milliseconds(),
 	}, nil
 }
