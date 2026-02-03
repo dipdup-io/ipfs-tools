@@ -13,6 +13,13 @@ import (
 	"golang.org/x/time/rate"
 )
 
+//go:generate mockgen -source=$GOFILE -destination=mock_$GOFILE -package=ipfs -typed
+type IPool interface {
+	Get(ctx context.Context, link string) (Data, error)
+	GetFromRandomGateway(ctx context.Context, link string) (Data, error)
+	GetFromNode(ctx context.Context, link, node string) (Data, error)
+}
+
 // Pool -
 type Pool struct {
 	limiters map[string]*rate.Limiter
