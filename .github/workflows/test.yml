@@ -10,16 +10,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version: '1.25'
-          cache: false
+          go-version: '1.26'
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.4.0
+          version: v2.11.3
           args: --timeout=5m
 
   test:
@@ -27,12 +26,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version: 1.25.x
+          go-version: 1.26.x
 
       - name: Golang tests
         env:
@@ -40,12 +39,3 @@ jobs:
         run: |
           go mod download
           go test -p 8 ./...
-
-      - name: Update coverage report
-        uses: ncruces/go-coverage-report@v0.2.5
-        with:
-          report: 'true'
-          chart: 'true'
-          amend: 'true'
-          reuse-go: 'true'
-        continue-on-error: true
