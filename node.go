@@ -12,6 +12,7 @@ import (
 	"github.com/ipfs/boxo/files"
 	boxopath "github.com/ipfs/boxo/path"
 	icore "github.com/ipfs/kubo/core/coreiface"
+	"github.com/ipfs/kubo/core/corerepo"
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
@@ -20,6 +21,7 @@ import (
 	"github.com/ipfs/kubo/core"
 	"github.com/ipfs/kubo/core/coreapi"
 	"github.com/ipfs/kubo/plugin/loader" // This package is needed so that all the preloaded plugins are loaded automatically
+	"github.com/ipfs/kubo/repo"
 	"github.com/ipfs/kubo/repo/fsrepo"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
@@ -30,7 +32,7 @@ type Node struct {
 	node      *core.IpfsNode
 	providers []Provider
 	limit     int64
-	wg        *sync.WaitGroup
+	wg        sync.WaitGroup
 }
 
 // NewNode -
@@ -44,12 +46,11 @@ func NewNode(ctx context.Context, dir string, limit int64, blacklist []string, p
 		node:      node,
 		providers: providers,
 		limit:     limit,
-		wg:        new(sync.WaitGroup),
 	}, nil
 }
 
 // Start -
-func (n *Node) Start(ctx context.Context, bootstrap ...string) error {
+func (n *Node) Start(ctx context.Context) error {
 	log.Info().Msg("going to connect to bootstrap nodes...")
 
 	connected, err := n.api.Swarm().Peers(ctx)
@@ -64,8 +65,11 @@ func (n *Node) Start(ctx context.Context, bootstrap ...string) error {
 			Msg("connected to peer")
 	}
 
-	n.wg.Add(1)
-	go n.reconnect(ctx)
+	n.wg.Go(func() {
+		if err := corerepo.PeriodicGC(ctx, n.node); err != nil && !errors.Is(err, context.Canceled) {
+			log.Err(err).Msg("ipfs periodic gc")
+		}
+	})
 
 	return nil
 }
@@ -119,12 +123,11 @@ func spawn(ctx context.Context, dir string, blacklist []string, providers []Prov
 		return nil, nil, onceErr
 	}
 
-	repoPath, err := createRepository(dir, blacklist, providers)
-	if err != nil {
+	if err := createRepository(dir); err != nil {
 		return nil, nil, err
 	}
 
-	r, err := fsrepo.Open(repoPath)
+	r, err := openRepository(dir, blacklist, providers)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -144,51 +147,81 @@ func spawn(ctx context.Context, dir string, blacklist []string, providers []Prov
 	return api, node, err
 }
 
-func createRepository(dir string, blacklist []string, providers []Provider) (string, error) {
-	if _, err := os.Stat(dir); err != nil {
-		if os.IsNotExist(err) {
-			if err := os.MkdirAll(dir, os.ModePerm); err != nil {
-				return "", fmt.Errorf("failed to get dir: %s", err)
-			}
-		} else {
-			return "", err
-		}
-	}
-
-	// Create a config with default options and a 2048 bit key
-	cfg, err := config.Init(io.Discard, 2048)
+// openRepository opens an initialized repo and persists the current settings into its config.
+func openRepository(dir string, blacklist []string, providers []Provider) (repo.Repo, error) {
+	r, err := fsrepo.Open(dir)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
+	if err := updateRepoConfig(r, blacklist, providers); err != nil {
+		if closeErr := r.Close(); closeErr != nil {
+			log.Err(closeErr).Msg("closing ipfs repo")
+		}
+		return nil, err
+	}
+
+	return r, nil
+}
+
+func updateRepoConfig(r repo.Repo, blacklist []string, providers []Provider) error {
+	current, err := r.Config()
+	if err != nil {
+		return err
+	}
+
+	updated, err := current.Clone()
+	if err != nil {
+		return err
+	}
+	if err := applySettings(updated, blacklist, providers); err != nil {
+		return err
+	}
+
+	return r.SetConfig(updated)
+}
+
+func applySettings(cfg *config.Config, blacklist []string, providers []Provider) error {
 	cfg.Swarm.DisableBandwidthMetrics = true
 	cfg.Swarm.Transports.Network.Relay = config.False
 	cfg.Swarm.Transports.Network.QUIC = config.False
 	cfg.Swarm.AddrFilters = blacklist
-	cfg.Swarm.ConnMgr.HighWater = config.NewOptionalInteger(50)
 	cfg.Swarm.ConnMgr.LowWater = config.NewOptionalInteger(20)
+	cfg.Swarm.ConnMgr.HighWater = config.NewOptionalInteger(50)
 	cfg.Swarm.ConnMgr.GracePeriod = config.NewOptionalDuration(time.Minute)
+
 	cfg.Routing.AcceleratedDHTClient = config.False
-	cfg.Routing.Type = config.NewOptionalString("dhtclient")
+	cfg.Routing.Type = config.NewOptionalString("delegated")
+	cfg.Routing.DelegatedRouters = []string{"auto"}
+
 	cfg.Provide.Enabled = config.False
 	cfg.Bitswap.ServerEnabled = config.False
+
 	cfg.Datastore.StorageMax = "2GB"
 	cfg.Datastore.GCPeriod = "1h"
 
 	peers, err := providersToAddrInfo(providers)
 	if err != nil {
-		return "", errors.Wrap(err, "collecting providers info error")
+		return errors.Wrap(err, "collecting providers info")
 	}
-	cfg.Peering = config.Peering{
-		Peers: peers,
+	cfg.Peering = config.Peering{Peers: peers}
+	return nil
+}
+
+func createRepository(dir string) error {
+	if fsrepo.IsInitialized(dir) {
+		return nil
+	}
+	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+		return errors.Wrap(err, "failed to create dir")
 	}
 
-	// Create the repo with the config
-	if err = fsrepo.Init(dir, cfg); err != nil {
-		return "", errors.Wrap(err, "failed to init node")
+	cfg, err := config.Init(io.Discard, 2048)
+	if err != nil {
+		return errors.Wrap(err, "config init")
 	}
 
-	return dir, nil
+	return errors.Wrap(fsrepo.Init(dir, cfg), "failed to init node")
 }
 
 func setupPlugins(externalPluginsPath string) error {
@@ -208,30 +241,6 @@ func setupPlugins(externalPluginsPath string) error {
 	}
 
 	return nil
-}
-
-func (n *Node) reconnect(ctx context.Context) {
-	defer n.wg.Done()
-
-	ticker := time.NewTicker(time.Minute * 3)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			peers, err := n.api.Swarm().Peers(ctx)
-			if err != nil {
-				log.Err(err).Msg("receiving peers")
-				continue
-			}
-
-			for _, pi := range peers {
-				log.Info().Str("peer_id", pi.ID().String()).Str("address", pi.Address().String()).Msg("connected to peer")
-			}
-		}
-	}
 }
 
 func providersToAddrInfo(providers []Provider) ([]peer.AddrInfo, error) {
