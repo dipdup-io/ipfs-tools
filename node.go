@@ -165,11 +165,15 @@ func createRepository(dir string, blacklist []string, providers []Provider) (str
 	cfg.Swarm.Transports.Network.Relay = config.False
 	cfg.Swarm.Transports.Network.QUIC = config.False
 	cfg.Swarm.AddrFilters = blacklist
-	cfg.Swarm.ConnMgr.HighWater = config.NewOptionalInteger(150)
-	cfg.Swarm.ConnMgr.LowWater = config.NewOptionalInteger(100)
-	cfg.Swarm.ConnMgr.GracePeriod = config.NewOptionalDuration(time.Minute * 5)
+	cfg.Swarm.ConnMgr.HighWater = config.NewOptionalInteger(50)
+	cfg.Swarm.ConnMgr.LowWater = config.NewOptionalInteger(20)
+	cfg.Swarm.ConnMgr.GracePeriod = config.NewOptionalDuration(time.Minute)
 	cfg.Routing.AcceleratedDHTClient = config.False
 	cfg.Routing.Type = config.NewOptionalString("dhtclient")
+	cfg.Provide.Enabled = config.False
+	cfg.Bitswap.ServerEnabled = config.False
+	cfg.Datastore.StorageMax = "2GB"
+	cfg.Datastore.GCPeriod = "1h"
 
 	peers, err := providersToAddrInfo(providers)
 	if err != nil {
