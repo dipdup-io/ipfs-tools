@@ -58,7 +58,7 @@ func ShuffleGateways(gateways []string) []string {
 
 	shuffled := make([]string, len(gateways))
 	copy(shuffled, gateways)
-	rand.Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
+	rand.Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] }) //nolint:gosec
 	return shuffled
 }
 
